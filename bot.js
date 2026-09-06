@@ -15,6 +15,16 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 // Хранилище заблокированных пользователей (в памяти)
 const blockedUsers = new Set(); // множество заблокированных пользователей
 
+// Функция экранирования текста для HTML режима
+function escapeHtml(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
 // Команда /start
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
@@ -207,55 +217,56 @@ bot.on('callback_query', (query) => {
     }
     
     if (action === 'approve') {
-        // Одобряем пост
-        const userMention = `[${post.fullName}](tg://user?id=${post.userId})`;
+        // Одобряем пост - используем HTML режим для корректной работы с спецсимволами
+        const escapedName = escapeHtml(post.fullName);
+        const userMention = `<a href="tg://user?id=${post.userId}">${escapedName}</a>`;
         const signature = `\n\n${userMention}\n#от_подписчика`;
         
         let sendPromise;
         
         switch (post.type) {
             case 'text':
-                sendPromise = bot.sendMessage(CHANNEL_ID, post.content.text + signature, { parse_mode: 'Markdown' });
+                sendPromise = bot.sendMessage(CHANNEL_ID, escapeHtml(post.content.text) + signature, { parse_mode: 'HTML' });
                 break;
             case 'photo':
                 sendPromise = bot.sendPhoto(CHANNEL_ID, post.content.photo, { 
-                    caption: (post.content.caption || '') + signature, 
-                    parse_mode: 'Markdown' 
+                    caption: escapeHtml(post.content.caption || '') + signature, 
+                    parse_mode: 'HTML' 
                 });
                 break;
             case 'video':
                 sendPromise = bot.sendVideo(CHANNEL_ID, post.content.video, { 
-                    caption: (post.content.caption || '') + signature, 
-                    parse_mode: 'Markdown' 
+                    caption: escapeHtml(post.content.caption || '') + signature, 
+                    parse_mode: 'HTML' 
                 });
                 break;
             case 'audio':
                 sendPromise = bot.sendAudio(CHANNEL_ID, post.content.audio, { 
-                    caption: (post.content.caption || '') + signature, 
-                    parse_mode: 'Markdown' 
+                    caption: escapeHtml(post.content.caption || '') + signature, 
+                    parse_mode: 'HTML' 
                 });
                 break;
             case 'voice':
                 sendPromise = bot.sendVoice(CHANNEL_ID, post.content.voice, { 
-                    caption: (post.content.caption || '') + signature, 
-                    parse_mode: 'Markdown' 
+                    caption: escapeHtml(post.content.caption || '') + signature, 
+                    parse_mode: 'HTML' 
                 });
                 break;
             case 'document':
                 sendPromise = bot.sendDocument(CHANNEL_ID, post.content.document, { 
-                    caption: (post.content.caption || '') + signature, 
-                    parse_mode: 'Markdown' 
+                    caption: escapeHtml(post.content.caption || '') + signature, 
+                    parse_mode: 'HTML' 
                 });
                 break;
             case 'animation':
                 sendPromise = bot.sendAnimation(CHANNEL_ID, post.content.animation, { 
-                    caption: (post.content.caption || '') + signature, 
-                    parse_mode: 'Markdown' 
+                    caption: escapeHtml(post.content.caption || '') + signature, 
+                    parse_mode: 'HTML' 
                 });
                 break;
             case 'sticker':
                 sendPromise = bot.sendSticker(CHANNEL_ID, post.content.sticker)
-                    .then(() => bot.sendMessage(CHANNEL_ID, `${userMention}\n#от_подписчика`, { parse_mode: 'Markdown' }));
+                    .then(() => bot.sendMessage(CHANNEL_ID, `${userMention}\n#от_подписчика`, { parse_mode: 'HTML' }));
                 break;
         }
         
@@ -265,17 +276,17 @@ bot.on('callback_query', (query) => {
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { 
                     chat_id: ADMIN_ID, 
                     message_id: messageId 
-                });
+                }).catch(() => {}); // Игнорируем ошибку если сообщение не изменено
                 
                 // Добавляем отметку об одобрении
                 bot.editMessageText(`${query.message.text}\n\n✅ ПОСТ ОДОБРЕН И ОПУБЛИКОВАН`, {
                     chat_id: ADMIN_ID,
                     message_id: messageId,
                     parse_mode: 'Markdown'
-                });
+                }).catch(() => {}); // Игнорируем ошибку если сообщение не изменено
                 
                 // Уведомляем пользователя
-                bot.sendMessage(post.originalChatId, '✅ Ваш пост был одобрен и опубликован в канале!\nСпасибо за ваш вклад! 🎉');
+                bot.sendMessage(post.originalChatId, '✅ Ваш пост был одобрен и опубликован в канале!\nСпасибо за ваш вклад! 🎉').catch(() => {});
                 
                 // Удаляем пост из базы данных
                 db.removePost(postId.toString());

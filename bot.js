@@ -1,4 +1,5 @@
 const TelegramBot = require('node-telegram-bot-api');
+const db = require('./db');
 
 // ЗАМЕНИТЕ НА ВАШ ТОКЕН ОТ @BotFather
 const TOKEN = 'YOUR_BOT_TOKEN_HERE';
@@ -11,8 +12,7 @@ const ADMIN_ID = YOUR_ADMIN_ID_HERE;
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// Хранилище данных (в памяти, для продакшена лучше использовать БД)
-const pendingPosts = {}; // { messageId: { userId, username, content, type } }
+// Хранилище заблокированных пользователей (в памяти)
 const blockedUsers = new Set(); // множество заблокированных пользователей
 
 // Команда /start
@@ -116,16 +116,16 @@ bot.on('message', (msg) => {
         };
     }
     
-    // Сохраняем пост во временное хранилище
+    // Сохраняем пост в базу данных (JSON файл)
     const tempMessageId = Date.now();
-    pendingPosts[tempMessageId] = {
+    db.addPost(tempMessageId.toString(), {
         userId: userId,
         username: username,
         fullName: fullName,
         content: contentData,
         type: postType,
         originalChatId: chatId
-    };
+    });
     
     // Формируем сообщение для админа
     const adminMessage = `📨 Новый пост на модерацию!\n\n` +
@@ -196,7 +196,7 @@ bot.on('callback_query', (query) => {
     const action = parts[0];
     const postId = parseInt(parts[1]);
     
-    const post = pendingPosts[postId];
+    const post = db.getPost(postId.toString());
     
     if (!post) {
         bot.answerCallbackQuery(query.id, { 
@@ -277,8 +277,8 @@ bot.on('callback_query', (query) => {
                 // Уведомляем пользователя
                 bot.sendMessage(post.originalChatId, '✅ Ваш пост был одобрен и опубликован в канале!\nСпасибо за ваш вклад! 🎉');
                 
-                // Удаляем пост из хранилища
-                delete pendingPosts[postId];
+                // Удаляем пост из базы данных
+                db.removePost(postId.toString());
             }).catch(err => {
                 console.error('Ошибка при публикации:', err);
                 bot.answerCallbackQuery(query.id, { 
@@ -308,8 +308,8 @@ bot.on('callback_query', (query) => {
         // Уведомляем пользователя
         bot.sendMessage(post.originalChatId, '❌ Ваш пост был отклонён администратором.\nНе расстраивайтесь, попробуйте отправить другой!');
         
-        // Удаляем пост из хранилища
-        delete pendingPosts[postId];
+        // Удаляем пост из базы данных
+        db.removePost(postId.toString());
         
         bot.answerCallbackQuery(query.id, { text: 'Пост отклонён!' });
     } else if (action === 'block_user') {
@@ -387,13 +387,22 @@ bot.onText(/\/stats/, (msg) => {
         return;
     }
     
-    const pendingCount = Object.keys(pendingPosts).length;
+    const pendingCount = db.getAllKeys().length;
     const blockedCount = blockedUsers.size;
     
     bot.sendMessage(chatId, `📊 Статистика бота:\n\n` +
                            `📨 Постов на модерации: ${pendingCount}\n` +
                            `🚫 Заблокировано пользователей: ${blockedCount}`);
 });
+
+// Восстановление очереди постов при перезапуске (информационное сообщение админу)
+setTimeout(() => {
+    const pendingKeys = db.getAllKeys();
+    if (pendingKeys.length > 0) {
+        console.log(`[DB] При старте восстановлено ${pendingKeys.length} постов из очереди.`);
+        bot.sendMessage(ADMIN_ID, `🔄 Бот перезапущен. В очереди на модерацию осталось ${pendingKeys.length} постов.`);
+    }
+}, 2000);
 
 console.log('Бот запущен...');
 console.log('Не забудьте заменить TOKEN, CHANNEL_ID и ADMIN_ID в коде!');

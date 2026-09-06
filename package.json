@@ -11,6 +11,6 @@
   "license": "ISC",
   "description": "Telegram bot for moderating user posts",
   "dependencies": {
-    "node-telegram-bot-api": "^2.1.0"
+    "node-telegram-bot-api": "0.61.0"
   }
 }
